@@ -1,0 +1,6 @@
+Hero background:
+Public Domain Pictures — “Ocean Wave Background”
+License: CC0 / Public Domain
+Source: https://www.publicdomainpictures.net/en/view-image.php?image=294231&picture=ocean-wave-background
+
+The supplied reference image was used as the visual design reference. Local logo PNGs were cropped from that supplied reference so the UI can remain self-contained.

@@ -1,15 +1,7 @@
-# Terraform
 .terraform/
 *.tfstate
 *.tfstate.*
-crash.log
-crash.*.log
-*.tfvars
-
-# Sensitive files
-*.pem
+.terraform.lock.hcl
 .env
 .env.*
-
-# Terraform lock file can be committed
-# .terraform.lock.hcl
+node_modules/
