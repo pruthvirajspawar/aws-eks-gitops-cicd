@@ -12,12 +12,21 @@ on:
 jobs:
   terraform:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+
     runs-on: ubuntu-latest
 
     steps:
+
+      # ----------------------------------------
+      # 1. Checkout Repository
+      # ----------------------------------------
       - name: Checkout Code
         uses: actions/checkout@v4
 
+
+      # ----------------------------------------
+      # 2. Configure AWS Credentials
+      # ----------------------------------------
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -25,21 +34,182 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
 
+
+      # ----------------------------------------
+      # 3. Setup Terraform
+      # ----------------------------------------
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
+
+      # ----------------------------------------
+      # 4. Terraform Init
+      # ----------------------------------------
       - name: Terraform Init
         run: |
           terraform init
 
+
+      # ----------------------------------------
+      # 5. Terraform Validate
+      # ----------------------------------------
       - name: Terraform Validate
         run: |
           terraform validate
 
+
+      # ----------------------------------------
+      # 6. Terraform Plan
+      # ----------------------------------------
       - name: Terraform Plan
         run: |
           terraform plan
 
+
+      # ----------------------------------------
+      # 7. Terraform Apply
+      # ----------------------------------------
       - name: Terraform Apply
         run: |
           terraform apply -auto-approve
+
+
+      # ----------------------------------------
+      # 8. Get EKS Cluster Name
+      # ----------------------------------------
+      - name: Get EKS Cluster Name
+        id: eks
+        run: |
+
+          CLUSTER_NAME=$(aws eks list-clusters \
+            --region ap-south-1 \
+            --query 'clusters[0]' \
+            --output text)
+
+          echo "EKS Cluster Name: $CLUSTER_NAME"
+
+          if [ "$CLUSTER_NAME" = "None" ] || [ -z "$CLUSTER_NAME" ]; then
+            echo "ERROR: EKS cluster not found"
+            exit 1
+          fi
+
+          echo "cluster_name=$CLUSTER_NAME" >> "$GITHUB_OUTPUT"
+
+
+      # ----------------------------------------
+      # 9. Configure kubectl
+      # ----------------------------------------
+      - name: Configure kubectl
+        run: |
+
+          aws eks update-kubeconfig \
+            --region ap-south-1 \
+            --name "${{ steps.eks.outputs.cluster_name }}"
+
+
+      # ----------------------------------------
+      # 10. Verify EKS
+      # ----------------------------------------
+      - name: Verify Kubernetes Cluster
+        run: |
+          kubectl get nodes
+
+
+      # ----------------------------------------
+      # 11. Create Argo CD Namespace
+      # ----------------------------------------
+      - name: Create Argo CD Namespace
+        run: |
+
+          kubectl create namespace argocd \
+            --dry-run=client \
+            -o yaml | kubectl apply -f -
+
+
+      # ----------------------------------------
+      # 12. Install Argo CD
+      # ----------------------------------------
+      - name: Install Argo CD
+        run: |
+
+          kubectl apply \
+            --server-side \
+            --force-conflicts \
+            -n argocd \
+            -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+
+      # ----------------------------------------
+      # 13. Wait for Argo CD Application CRD
+      # ----------------------------------------
+      - name: Wait for Argo CD CRD
+        run: |
+
+          kubectl wait \
+            --for=condition=Established \
+            crd/applications.argoproj.io \
+            --timeout=180s
+
+
+      # ----------------------------------------
+      # 14. Verify Argo CD CRD
+      # ----------------------------------------
+      - name: Verify Argo CD CRD
+        run: |
+
+          kubectl get crd applications.argoproj.io
+
+
+      # ----------------------------------------
+      # 15. Wait for Argo CD Server
+      # ----------------------------------------
+      - name: Wait for Argo CD
+        run: |
+
+          kubectl wait \
+            --for=condition=Available \
+            deployment/argocd-server \
+            -n argocd \
+            --timeout=300s
+
+
+      # ----------------------------------------
+      # 16. Verify Argo CD Pods
+      # ----------------------------------------
+      - name: Verify Argo CD Pods
+        run: |
+
+          kubectl get pods -n argocd
+
+
+      # ----------------------------------------
+      # 17. Apply Argo CD Application
+      # ----------------------------------------
+      - name: Apply Argo CD Application
+        run: |
+
+          kubectl apply \
+            -f k8s/application.yaml
+
+
+      # ----------------------------------------
+      # 18. Verify Argo CD Application
+      # ----------------------------------------
+      - name: Verify Argo CD Application
+        run: |
+
+          kubectl get application \
+            eks-application \
+            -n argocd
+
+
+      # ----------------------------------------
+      # 19. Check Application Status
+      # ----------------------------------------
+      - name: Check Application Status
+        run: |
+
+          kubectl get application \
+            eks-application \
+            -n argocd \
+            -o wide
