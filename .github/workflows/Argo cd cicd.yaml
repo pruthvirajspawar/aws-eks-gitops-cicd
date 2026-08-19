@@ -11,17 +11,17 @@ on:
 
 jobs:
   argocd:
-    
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
 
     runs-on: ubuntu-latest
 
     steps:
 
-      # Checkout repository
+      # 1. Checkout repository
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Configure AWS credentials
+      # 2. Configure AWS credentials
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -29,34 +29,52 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
 
-      # Configure kubectl for EKS
+      # 3. Get EKS cluster name
+      - name: Get EKS Cluster Name
+        id: eks
+        run: |
+          CLUSTER_NAME=$(aws eks list-clusters \
+            --region ap-south-1 \
+            --query 'clusters[0]' \
+            --output text)
+
+          echo "EKS Cluster: $CLUSTER_NAME"
+
+          if [ "$CLUSTER_NAME" = "None" ] || [ -z "$CLUSTER_NAME" ]; then
+            echo "No EKS cluster found in ap-south-1"
+            exit 1
+          fi
+
+          echo "cluster_name=$CLUSTER_NAME" >> "$GITHUB_OUTPUT"
+
+      # 4. Configure kubectl
       - name: Configure kubectl
         run: |
           aws eks update-kubeconfig \
             --region ap-south-1 \
-            --name YOUR_EKS_CLUSTER_NAME
+            --name "${{ steps.eks.outputs.cluster_name }}"
 
-      # Verify EKS connection
+      # 5. Verify EKS
       - name: Verify Kubernetes Cluster
         run: |
           kubectl get nodes
 
-      # Verify Argo CD installation
+      # 6. Verify Argo CD
       - name: Verify Argo CD
         run: |
           kubectl get pods -n argocd
 
-      # Apply Argo CD Application
+      # 7. Apply Argo CD Application
       - name: Apply Argo CD Application
         run: |
           kubectl apply -f argocd/application.yaml
 
-      # Verify Argo CD Application
+      # 8. Verify Argo CD Application
       - name: Verify Argo CD Application
         run: |
           kubectl get application eks-application -n argocd
 
-      # Check application status
+      # 9. Check application status
       - name: Check Argo CD Application Status
         run: |
           kubectl get application eks-application \
