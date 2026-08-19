@@ -1,0 +1,64 @@
+name: Argo CD CI/CD
+
+on:
+  workflow_run:
+    workflows:
+      - Terraform CI/CD
+    types:
+      - completed
+
+  workflow_dispatch:
+
+jobs:
+  argocd:
+    
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # Checkout repository
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Configure AWS credentials
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      # Configure kubectl for EKS
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region ap-south-1 \
+            --name YOUR_EKS_CLUSTER_NAME
+
+      # Verify EKS connection
+      - name: Verify Kubernetes Cluster
+        run: |
+          kubectl get nodes
+
+      # Verify Argo CD installation
+      - name: Verify Argo CD
+        run: |
+          kubectl get pods -n argocd
+
+      # Apply Argo CD Application
+      - name: Apply Argo CD Application
+        run: |
+          kubectl apply -f argocd/application.yaml
+
+      # Verify Argo CD Application
+      - name: Verify Argo CD Application
+        run: |
+          kubectl get application eks-application -n argocd
+
+      # Check application status
+      - name: Check Argo CD Application Status
+        run: |
+          kubectl get application eks-application \
+            -n argocd \
+            -o wide
